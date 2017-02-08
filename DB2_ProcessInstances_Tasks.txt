@@ -1,0 +1,79 @@
+-- This program is licensed under the International License Agreement for Non-Warranted Programs that can be found here: http://www-03.ibm.com/software/sla/sladb.nsf/sla/bla/
+-- Last update July 2016, additional feature requests send to: stephan.volz@de.ibm.com
+
+-- connect to BPMDB to run the SQL statements
+
+-- Provides statistics information 
+
+select tabschema, tabname, card, overflow, stats_time, npages, fpages, avgrowsize from syscat.tables;
+select tabschema, tabname, indname, colnames, stats_time, indcard, lastused from syscat.indexes;
+
+-- Provides process instances grouped by process instances state
+
+select substr(snap.name,1,50) as "name", 
+          proj.short_name as "container_Acronym",
+          snap.acronym as "container_SnapshotAcronym",
+          bpd.snapshot_id as "snapshot id", 
+          substr(code.NAME,1,20) as "status",               
+          count(bpd.EXECUTION_STATUS) as "number of instances" 
+from LSW_BPD_INSTANCE bpd 
+      left outer join lsw_bpd_status_codes code on code.STATUS_ID = bpd.execution_status         
+      left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+      left outer join lsw_project proj on snap.PROJECT_ID = proj.PROJECT_ID
+group by snap.name, proj.short_name, snap.acronym, bpd.snapshot_id, code.NAME
+order by snap.name, proj.short_name, snap.acronym, bpd.snapshot_id, code.NAME 
+with ur;
+
+
+-- Provides task states grouped by task steps
+
+select substr(snap.name,1,50) as "snapshot name", 
+       t.SNAPSHOT_ID, 
+       substr(t.SUBJECT,1,50) as "subject", 
+       substr(code.NAME,1,20) as "status", 
+       COUNT(t.STATUS) as "number"
+from lsw_task t 
+       left outer join LSW_TASK_STATUS_CODES code on code.STATUS_VALUE = t.STATUS
+       left outer join LSW_SNAPSHOT snap on t.snapshot_id = snap.snapshot_id
+group by  snap.name, t.SNAPSHOT_ID, t.SUBJECT, code.NAME
+order by snap.name, t.SNAPSHOT_ID, t.SUBJECT
+with ur;
+
+-- Provides a connection between closed tasks for completed and running process instances
+
+select     substr(snap.name,1,50) as "snapshot name", 
+           bpd.snapshot_id as "snapshot id",        
+           count(distinct bpd.bpd_instance_id) as "number of completed process instances",
+           count(ta.status) as "number of closed tasks" 
+from LSW_BPD_INSTANCE bpd
+        left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+        left outer join lsw_task ta on bpd.bpd_instance_id = ta.bpd_instance_id
+where bpd.bpd_instance_id = ta.bpd_instance_id and bpd.execution_status = 2
+group by snap.name, bpd.snapshot_id with ur;
+
+--
+select  substr(snap.name,1,50) as "snapshot name", 
+        bpd.snapshot_id as "snapshot id",        
+        count(distinct bpd.bpd_instance_id) as "number of running process instances",
+        count(ta.status) as "number of closed tasks" 
+from LSW_BPD_INSTANCE bpd
+        left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+        left outer join lsw_task ta on bpd.bpd_instance_id = ta.bpd_instance_id
+where bpd.bpd_instance_id = ta.bpd_instance_id and bpd.execution_status = 1 and ta.status = 32
+group by snap.name, bpd.snapshot_id with ur;
+
+-- Provides the upper limit for system tasks in the system
+select user_id, activity_name, status, count(*) from LSW_TASK group by user_id, activity_name, status with ur;
+
+
+-- Provides an overview of group types:
+SELECT CASE G.GROUP_TYPE
+        WHEN 0 THEN 'Security Group'
+        WHEN 1 THEN 'Participant Group'
+        WHEN 2 THEN 'Adhoc Group'
+        WHEN 3 THEN 'Internal Group'
+        WHEN 4 THEN 'Dynamic Group'
+      END as "Group Type",
+count(G.GROUP_ID) as "Count"
+FROM LSW_USR_GRP_XREF as G
+GROUP BY G.GROUP_TYPE with ur;
