@@ -1,5 +1,5 @@
 -- This program is licensed under the International License Agreement for Non-Warranted Programs that can be found here: http://www-03.ibm.com/software/sla/sladb.nsf/sla/bla/
--- Last update December 2016, additional feature requests send to: stephan.volz@de.ibm.com 
+-- Last update July 2017, additional feature requests send to: stephan.volz@de.ibm.com 
 -- connect to BPMDB to run the SQL statements
 
 -- Collects Oracle configuration parameters (DBA permissions required)
@@ -71,7 +71,7 @@ SELECT CASE G.GROUP_TYPE
         WHEN 2 THEN 'Adhoc Group'
         WHEN 3 THEN 'Internal Group'
         WHEN 4 THEN 'Dynamic Group'
-      END as "Group Type",
-count(G.GROUP_ID) as "Count"
-FROM LSW_USR_GRP_XREF as G
+      END "Group Type",
+count(G.GROUP_ID) "Count"
+FROM LSW_USR_GRP_XREF G
 GROUP BY G.GROUP_TYPE;
