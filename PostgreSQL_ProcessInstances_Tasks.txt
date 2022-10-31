@@ -1,0 +1,98 @@
+-- This program is licensed under the International License Agreement for Non-Warranted Programs that can be found here: http://www-03.ibm.com/software/sla/sladb.nsf/sla/bla/
+-- Last update July 2016, additional feature requests send to: stephan.volz@de.ibm.com
+
+-- connect to BPMDB to run the SQL statements
+
+-- ******************************************************************************
+-- MUST READ:
+-- ==========
+-- IMPORTANT: Be aware that some SQL statements require additional libraries
+--            Where needed this is mentioned before the statement
+-- ******************************************************************************
+
+
+===================================================================================================
+-- Provides statistics information 
+
+-- Base statistics data:
+select schemaname, relname, seq_scan, idx_scan, n_live_tup, n_mod_since_analyze, n_ins_since_vacuum, last_vacuum, last_autovacuum, last_analyze from pg_stat_all_tables ;
+
+
+-- Most expensive SQL statements
+-- Requirements: In postgresql.conf (restart required):   shared_preload_libraries = 'pg_stat_statements' 
+                 Use select pg_stat_statements_reset() to reset the counters
+
+SELECT substring(query, 1, 60) AS short_query, round(total_exec_time::numeric, 2) AS total_exec_time, calls, round(mean_exec_time::numeric, 2) AS mean, round((100 * total_exec_time / sum(total_exec_time::numeric) OVER ())::numeric, 2) AS percentage_overall FROM  pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;
+
+
+-- Table scan activities:
+SELECT schemaname, relname, seq_scan, seq_tup_read, idx_scan, seq_tup_read / seq_scan AS avg FROM pg_stat_user_tables WHERE seq_scan > 0 ORDER BY seq_tup_read DESC ;
+
+===================================================================================================
+-- Provides process instances grouped by process instances state
+
+select substr(snap.name,1,50) as "name", 
+          proj.short_name as "container_Acronym",
+          snap.acronym as "container_SnapshotAcronym",
+          bpd.snapshot_id as "snapshot id", 
+          substr(code.NAME,1,20) as "status",               
+          count(bpd.EXECUTION_STATUS) as "number of instances" 
+from LSW_BPD_INSTANCE bpd 
+      left outer join lsw_bpd_status_codes code on code.STATUS_ID = bpd.execution_status         
+      left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+      left outer join lsw_project proj on snap.PROJECT_ID = proj.PROJECT_ID
+group by snap.name, proj.short_name, snap.acronym, bpd.snapshot_id, code.NAME
+order by snap.name, proj.short_name, snap.acronym, bpd.snapshot_id, code.NAME ;
+
+
+-- Provides task states grouped by task steps
+
+select substr(snap.name,1,50) as "snapshot name", 
+       t.SNAPSHOT_ID, 
+       substr(t.SUBJECT,1,50) as "subject", 
+       substr(code.NAME,1,20) as "status", 
+       COUNT(t.STATUS) as "number"
+from lsw_task t 
+       left outer join LSW_TASK_STATUS_CODES code on code.STATUS_VALUE = t.STATUS
+       left outer join LSW_SNAPSHOT snap on t.snapshot_id = snap.snapshot_id
+group by  snap.name, t.SNAPSHOT_ID, t.SUBJECT, code.NAME
+order by snap.name, t.SNAPSHOT_ID, t.SUBJECT;
+
+-- Provides a connection between closed tasks for completed and running process instances
+
+select     substr(snap.name,1,50) as "snapshot name", 
+           bpd.snapshot_id as "snapshot id",        
+           count(distinct bpd.bpd_instance_id) as "number of completed process instances",
+           count(ta.status) as "number of closed tasks" 
+from LSW_BPD_INSTANCE bpd
+        left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+        left outer join lsw_task ta on bpd.bpd_instance_id = ta.bpd_instance_id
+where bpd.bpd_instance_id = ta.bpd_instance_id and bpd.execution_status = '2'
+group by snap.name, bpd.snapshot_id;
+
+--
+select  substr(snap.name,1,50) as "snapshot name", 
+        bpd.snapshot_id as "snapshot id",        
+        count(distinct bpd.bpd_instance_id) as "number of running process instances",
+        count(ta.status) as "number of closed tasks" 
+from LSW_BPD_INSTANCE bpd
+        left outer join lsw_snapshot snap on bpd.snapshot_id = snap.snapshot_id
+        left outer join lsw_task ta on bpd.bpd_instance_id = ta.bpd_instance_id
+where bpd.bpd_instance_id = ta.bpd_instance_id and bpd.execution_status = '1' and ta.status = '32'
+group by snap.name, bpd.snapshot_id ;
+
+-- Provides the upper limit for system tasks in the system
+select user_id, activity_name, status, count(*) from LSW_TASK group by user_id, activity_name, status order by status desc, count(*) desc;
+
+
+-- Provides an overview of group types:
+SELECT CASE G.GROUP_TYPE
+        WHEN 0 THEN 'Security Group'
+        WHEN 1 THEN 'Participant Group'
+        WHEN 2 THEN 'Adhoc Group'
+        WHEN 3 THEN 'Internal Group'
+        WHEN 4 THEN 'Dynamic Group'
+      END as "Group Type",
+count(G.GROUP_ID) as "Count"
+FROM LSW_USR_GRP_XREF as G
+GROUP BY G.GROUP_TYPE;
